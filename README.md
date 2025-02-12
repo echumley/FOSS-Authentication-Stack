@@ -1,22 +1,72 @@
 # FOSS-Authentication-Stack
 This project aims to create a free, open-source replacement for the Windows Active Directory software suite for mixed Linux and Windows environments. This suite is entirely Linux-based and offers Active Directory-style services like Kerberos-based authentication, SSO, and user/group management.
 
-## Components: Software Choices - Purpose
-- **Identity Management & Directory Services:** FreeIPA - Provides LDAP, Kerberos, HBAC, and certificates for Linux.
-- **Authentication & SSO:** Keycloak - Provides OAuth2, OIDC, SAML authentication for web apps and modern services.
-- **User/Group Management:** FreeIPA - User and group management, including policies and roles.
-- **Host-Based Access Control (HBAC):** FreeIPA Enforces who can log in to which hosts based on group membership.
-- **Configuration Management:** Ansible + SSSD - Manages Linux configurations, sudo rules, and access control.
-- **Multi-Factor Authentication (MFA):** FreeIPA + Keycloak - Enforces MFA for users connecting to Linux machines and web apps.
-- **Certificate Authority (CA):** FreeIPA (built-in) - Issues certificates for internal authentication.
-- **Logging & Monitoring:** Graylog / ELK Stack - Collect logs and monitor authentication events and errors.
+## 🛠️ Components
+
+| Component       | Purpose |
+|----------------|---------|
+| **FreeIPA**    | LDAP, Kerberos, Host-Based Access Control (HBAC), Certificate Authority (CA) |
+| **Keycloak**   | OIDC/SAML authentication, MFA, and Web SSO |
+| **SSSD**       | System authentication for Linux clients via FreeIPA |
+| **Traefik**    | Reverse proxy for secure routing of web applications |
+| **CrowdSec**   | Behavior-based threat detection and protection |
 
 ---
 
-## Authentication Diagram
+## 🔑 Authentication Flow
 
+1. **User requests access** → Routed through **Traefik**.
+2. **If authentication is required**, request is sent to **Keycloak**.
+3. **Keycloak validates credentials** via **FreeIPA (LDAP/Kerberos)**.
+4. **Keycloak issues an OIDC/SAML token** → User gets authenticated.
+5. **For Linux clients**, SSSD enforces authentication and access control via **FreeIPA**.
+6. **CrowdSec analyzes traffic** for suspicious activity (e.g., brute-force attempts).
+
+---
+
+## 📌 Deployment Order
+
+1️⃣ **Install FreeIPA** (LDAP, Kerberos, HBAC, CA)
+2️⃣ **Configure FreeIPA Policies** (Users, Groups, Host-Based Access Control)
+3️⃣ **Deploy Keycloak** (Integrate with FreeIPA via LDAP, enable OIDC/SAML)
+4️⃣ **Set Up SSSD on Linux Clients** (Authenticate via FreeIPA)
+5️⃣ **Deploy Traefik** (Reverse Proxy for secure web app routing)
+6️⃣ **Deploy CrowdSec** (Monitor and block malicious traffic)
+
+---
+
+## 📜 Architecture Overview
 ```
-
+                        ┌────────────────────────────┐
+                        │       External User        │
+                        └────────────┬───────────────┘
+                                     │
+                                     ▼
+                        ┌────────────────────────────┐
+                        │        Traefik (Proxy)     │  🔒 Handles SSL, routes traffic
+                        └────────────┬───────────────┘
+                                     │
+        ┌────────────────────────────┼────────────────────────────┐
+        ▼                            ▼                            ▼
+┌───────────────────┐       ┌───────────────────┐       ┌───────────────────┐
+│  Web Applications │       │   Keycloak (SSO)  │       │  FreeIPA (LDAP)   │
+│  (Moodle, GitLab) │       │  OIDC/SAML Auth   │       │   Kerberos, HBAC  │
+└───────────────────┘       └───────────────────┘       └───────────────────┘
+               │                      │                           │
+               ▼                      ▼                           ▼
+      ┌─────────────────┐    ┌─────────────────────┐    ┌───────────────────┐
+      │  Auth Redirect  │───▶│ LDAP Authentication │───▶│ Identity Services │
+      └─────────────────┘    └─────────────────────┘    └───────────────────┘
+                                      ▲
+                                      │
+                        ┌────────────────────────────┐
+                        │     Linux Clients (SSSD)   │  🔒 HBAC rules applied
+                        └────────────────────────────┘
+                                      ▲
+                                      │
+                        ┌────────────────────────────┐
+                        │       CrowdSec (WAF)       │  🔒 Blocks brute force attacks
+                        └────────────────────────────┘
 ```
 
 ---
@@ -47,10 +97,6 @@ This project aims to create a free, open-source replacement for the Windows Acti
    - Leverage SSSD (System Security Services Daemon) on Linux machines to enforce centralized authentication and manage sudoers, group memberships, and access control.
    - Ansible can be used to enforce configuration policies across your Linux machines.
 
-5️⃣ **Logging & Monitoring**
-   - Use a centralized log server (e.g., Graylog or ELK Stack) to collect and monitor authentication events, failed login attempts, and other critical security logs.
-   - Ensure that all FreeIPA, Keycloak, and Linux system logs are sent to a central log server for monitoring and auditing.
-
 ---
 
 ## Key Features:
@@ -78,32 +124,6 @@ This project aims to create a free, open-source replacement for the Windows Acti
 
 ---
 
-## How to Set It Up
-1️⃣ **Install FreeIPA**  
-   1. Set up FreeIPA on a central server.  
-   2. Enable Kerberos, LDAP, and HBAC in the FreeIPA configuration.  
-   3. Configure user/group management policies and host access control rules.
-
-2️⃣ **Install Keycloak**  
-   1. Install Keycloak on a separate server or alongside FreeIPA.  
-   2. Integrate Keycloak with FreeIPA via LDAP for centralized user authentication.  
-   3. Enable OIDC/SAML for web-based SSO.
-
-3️⃣ **Configure MFA**  
-   1. Enable MFA in Keycloak to add another layer of security.  
-   2. Optionally, configure FreeIPA to enforce TOTP (Time-based One-Time Password) for command-line access (e.g., SSH).
-
-4️⃣ **Use SSSD on Linux Clients**  
-   1. Configure SSSD on Linux systems to authenticate against FreeIPA.  
-   2. Use HBAC policies to enforce who can log into which machines based on group membership.  
-   3. Use SSSD for managing sudo access, PAM (Pluggable Authentication Modules), and system login policies.
-
-5️⃣ **Configure Logging & Monitoring**  
-   1. Install and configure Graylog or ELK to collect and store logs from FreeIPA and Keycloak.  
-   2. Set up alerts for suspicious activity like failed login attempts or unauthorized access.
-
----
-
 ## Advantages of This Stack
 
 ✅ **Open-source and Free**
@@ -118,3 +138,14 @@ This project aims to create a free, open-source replacement for the Windows Acti
 
 ✅ **Easily Scalable**
    - This stack is easily scalable for environments with a large number of users and Linux systems. It can also be integrated with cloud services.
+
+--- 
+
+## 🔐 Security Features
+
+✅ **Centralized Authentication & SSO** (Kerberos for Linux, OIDC/SAML for Web Apps)  
+✅ **Host-Based Access Control (HBAC)** (Restrict users to specific machines)  
+✅ **Multi-Factor Authentication (MFA)** (TOTP, WebAuthn via Keycloak)  
+✅ **Automated Security Policies** (SSSD enforces sudo rules, system access)  
+✅ **Real-Time Traffic Protection** (CrowdSec analyzes and blocks threats)  
+✅ **Comprehensive Logging & Monitoring** (Graylog/ELK for security event tracking)  
